@@ -122,8 +122,8 @@ def ringdown_mode(t, s):
 
     ax.plot(t_fit, _exp_decay(t_fit, I0, tau, Boffset), 'r-', lw=2,
             label=f'Fit  τ = {tau:.4g} µs')
-    ax.plot(t_fit, -I0 * np.exp(-t_fit / tau) + Boffset,
-            'b--', lw=2, label='Mirrored fit (B − I₀·e^(−t/τ))')
+    ax.plot(t_fit, -(I0 * np.exp(-t_fit / tau) + Boffset),
+            'b--', lw=2, label='Mirrored fit (−(I₀·e^(−t/τ) + B))')
 
     Q = 2.0 * np.pi * VC * tau * 1e-6   # tau µs → s
 
