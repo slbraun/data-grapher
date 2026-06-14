@@ -41,7 +41,11 @@ def _three_lorentzians(t, A1, t1, g1, A2, t2, g2, A3, t3, g3):
 # ---------------------------------------------------------------------------
 
 def _load(path):
-    df = pd.read_csv(path, header=None, comment='#')
+    try:
+        df = pd.read_csv(path, header=None, comment='#')
+        pd.to_numeric(df.iloc[0, 0])   # raises if first cell is a string header
+    except (ValueError, TypeError):
+        df = pd.read_csv(path, comment='#')
     return df.iloc[:, 0].to_numpy(float), df.iloc[:, 1].to_numpy(float)
 
 
@@ -53,14 +57,35 @@ def ringdown_mode(t, s):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.scatter(t, s, s=8, alpha=0.5, label='Data')
 
+    # Use the known carrier period to set minimum peak separation
+    T_us    = 1.0 / (VC * 1e-6)              # carrier period in µs
+    dt_med  = np.median(np.diff(t))
+    min_dist = max(int(T_us / dt_med * 0.6), 2)   # ~60 % of one period
+
+    peak_idx, _ = find_peaks(s, distance=min_dist)
+    if len(peak_idx) < 3:
+        peak_idx, _ = find_peaks(s, distance=max(min_dist // 2, 1))
+
+    if len(peak_idx) < 2:
+        print('Could not find enough peaks for envelope fit.')
+        plt.close()
+        return
+
+    t_pk = t[peak_idx]
+    s_pk = s[peak_idx]
+
+    ax.scatter(t_pk, s_pk, s=40, color='red', zorder=5, label='Envelope peaks (fit points)')
+
     span = t[-1] - t[0]
-    I0_g = float(np.max(s) - np.min(s))
-    tau_g = span / 5.0
-    B_g = float(np.min(s))
+    # Baseline estimate: mean of the last quarter of peaks (where envelope is nearly flat)
+    n_tail  = max(len(s_pk) // 4, 1)
+    B_g     = float(np.mean(s_pk[-n_tail:]))
+    I0_g    = float(s_pk[0] - B_g)
+    tau_g   = span / 3.0
 
     try:
         popt, _ = curve_fit(
-            _exp_decay, t, s,
+            _exp_decay, t_pk, s_pk,
             p0=[I0_g, tau_g, B_g],
             bounds=([0, 1e-9, -np.inf], [np.inf, span * 20, np.inf]),
             maxfev=20_000,
@@ -79,11 +104,10 @@ def ringdown_mode(t, s):
 
     ax.plot(t_fit, _exp_decay(t_fit, I0, tau, Boffset), 'r-', lw=2,
             label=f'Fit  τ = {tau:.4g} µs')
-    ax.plot(t_fit, -I0 * np.exp(-t_fit / tau) - Boffset,
-            'b--', lw=2, label='Mirrored fit (−I₀·e^(−t/τ) − B)')
+    ax.plot(t_fit, -I0 * np.exp(-t_fit / tau) + Boffset,
+            'b--', lw=2, label='Mirrored fit (B − I₀·e^(−t/τ))')
 
-    # tau is in µs; convert to seconds for Q = ω₀·τ
-    Q = 2.0 * np.pi * VC * tau * 1e-6
+    Q = 2.0 * np.pi * VC * tau * 1e-6   # tau µs → s
 
     if Q < 1e3:
         msg = 'Data Invalid — Q < 10³'
