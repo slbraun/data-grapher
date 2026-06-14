@@ -221,14 +221,11 @@ def sideband_mode(t, s):
     delta_t = abs(t_sbR - t_sbL)   # µs – sideband separation
     C = 2.0 * fm / delta_t         # Hz / µs – calibration factor
 
-    # --- true baseline: median of data in outer regions ----------------
-    # (outside each sideband, away from the main peak)
-    margin = 0.1 * delta_t
-    left_mask  = t < (t_sbL - margin)
-    right_mask = t > (t_sbR + margin)
-    base_L = float(np.median(s[left_mask]))  if left_mask.any()  else 0.0
-    base_R = float(np.median(s[right_mask])) if right_mask.any() else 0.0
-    true_base = (base_L + base_R) / 2.0
+    # --- true baseline at the center peak position ---------------------
+    # = fitted background + tails of both sidebands evaluated at t_main.
+    # This is what the main peak actually sits on top of.
+    true_base = (_lorentzian(t_main, A_sbL, t_sbL, g_sbL) +
+                 _lorentzian(t_main, A_sbR, t_sbR, g_sbR))
 
     # --- numerical FWHM of main peak above true base -------------------
     t_dense = np.linspace(t[0], t[-1], 50_000)
