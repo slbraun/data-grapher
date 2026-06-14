@@ -41,12 +41,24 @@ def _three_lorentzians(t, A1, t1, g1, A2, t2, g2, A3, t3, g3):
 # ---------------------------------------------------------------------------
 
 def _load(path):
+    col_name = ''
     try:
         df = pd.read_csv(path, header=None, comment='#')
         pd.to_numeric(df.iloc[0, 0])   # raises if first cell is a string header
     except (ValueError, TypeError):
         df = pd.read_csv(path, comment='#')
-    return df.iloc[:, 0].to_numpy(float), df.iloc[:, 1].to_numpy(float)
+        col_name = str(df.columns[0]).lower()
+
+    t = df.iloc[:, 0].to_numpy(float)
+    s = df.iloc[:, 1].to_numpy(float)
+
+    # Normalise time to µs so all downstream code stays consistent
+    if '_ms' in col_name or col_name == 'ms':
+        t = t * 1_000.0          # ms → µs
+    elif ('_s' in col_name or col_name == 's') and '_ms' not in col_name:
+        t = t * 1_000_000.0      # s → µs
+
+    return t, s
 
 
 # ---------------------------------------------------------------------------
