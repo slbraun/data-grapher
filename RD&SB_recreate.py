@@ -95,17 +95,24 @@ def ringdown_mode(t, s):
     ax.scatter(t_pk, s_pk, s=40, color='red', zorder=5, label='Envelope peaks (fit points)')
 
     span = t[-1] - t[0]
-    # Baseline estimate: mean of the last quarter of peaks (where envelope is nearly flat)
-    n_tail  = max(len(s_pk) // 4, 1)
-    B_g     = float(np.mean(s_pk[-n_tail:]))
-    I0_g    = float(s_pk[0] - B_g)
-    tau_g   = span / 3.0
+
+    # Fix Boffset from the late-time signal mean (last 40 % of the trace),
+    # where the ringdown has mostly decayed to the noise floor.
+    # Fitting it as a free parameter lets it drift and prevents the
+    # envelopes from closing properly at the tail.
+    late_mask = t >= (t[0] + span * 0.6)
+    Boffset   = float(np.mean(s[late_mask])) if late_mask.any() else 0.0
+    s_pk_c    = s_pk - Boffset   # centred peak amplitudes for fitting
+
+    I0_g  = float(s_pk_c[0])
+    tau_g = span / 3.0
 
     try:
         popt, _ = curve_fit(
-            _exp_decay, t_pk, s_pk,
-            p0=[I0_g, tau_g, B_g],
-            bounds=([0, 1e-9, -np.inf], [np.inf, span * 20, np.inf]),
+            lambda t, I0, tau: I0 * np.exp(-t / tau),
+            t_pk, s_pk_c,
+            p0=[I0_g, tau_g],
+            bounds=([0, 1e-9], [np.inf, span * 20]),
             maxfev=20_000,
         )
     except RuntimeError as exc:
@@ -117,13 +124,12 @@ def ringdown_mode(t, s):
         plt.show()
         return
 
-    I0, tau, Boffset = popt
+    I0, tau = popt
     t_fit = np.linspace(t[0], t[-1], 2000)
+    env   = I0 * np.exp(-t_fit / tau)
 
-    ax.plot(t_fit, _exp_decay(t_fit, I0, tau, Boffset), 'r-', lw=2,
-            label=f'Fit  τ = {tau:.4g} µs')
-    ax.plot(t_fit, -(I0 * np.exp(-t_fit / tau) + Boffset),
-            'b--', lw=2, label='Mirrored fit (−(I₀·e^(−t/τ) + B))')
+    ax.plot(t_fit, env + Boffset, 'r-',  lw=2, label=f'Fit  τ = {tau:.4g} µs')
+    ax.plot(t_fit, -(env + Boffset),     'b--', lw=2, label='Mirrored fit (−(I₀·e^(−t/τ) + B))')
 
     Q = 2.0 * np.pi * VC * tau * 1e-6   # tau µs → s
 
