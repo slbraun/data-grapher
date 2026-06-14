@@ -69,14 +69,20 @@ def ringdown_mode(t, s):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.scatter(t, s, s=8, alpha=0.5, label='Data')
 
-    # Use the known carrier period to set minimum peak separation
-    T_us    = 1.0 / (VC * 1e-6)              # carrier period in µs
-    dt_med  = np.median(np.diff(t))
-    min_dist = max(int(T_us / dt_med * 0.6), 2)   # ~60 % of one period
+    # Estimate the dominant oscillation period from the data via FFT
+    # (more reliable than assuming the carrier period, which may differ
+    # from the observed beat/oscillation frequency in the signal)
+    dt_med = np.median(np.diff(t))
+    freqs  = np.fft.rfftfreq(len(s), d=dt_med)
+    power  = np.abs(np.fft.rfft(s - np.mean(s))) ** 2
+    dom_freq = freqs[np.argmax(power[1:]) + 1]      # skip DC bin
+    T_est    = 1.0 / dom_freq                        # estimated period (same units as t)
+    min_dist = max(int(T_est / dt_med * 0.5), 2)    # ~50 % of one period in samples
 
-    peak_idx, _ = find_peaks(s, distance=min_dist)
+    prom_thresh = (np.max(s) - np.min(s)) * 0.1
+    peak_idx, _ = find_peaks(s, distance=min_dist, prominence=prom_thresh)
     if len(peak_idx) < 3:
-        peak_idx, _ = find_peaks(s, distance=max(min_dist // 2, 1))
+        peak_idx, _ = find_peaks(s, distance=max(min_dist // 2, 1), prominence=prom_thresh * 0.3)
 
     if len(peak_idx) < 2:
         print('Could not find enough peaks for envelope fit.')
